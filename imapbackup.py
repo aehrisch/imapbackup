@@ -40,7 +40,7 @@ __contributors__ = "Bob Ippolito, Michael Leonhard, Giuseppe Scrivano <gscrivano
 # - Cleaned up code using PyLint to identify problems
 #   pylint -f html --indent-string="  " --max-line-length=90 imapbackup.py > report.html
 import getpass, os, gc, sys, time, platform, getopt
-import mailbox, imaplib, socket
+import mailbox, imaplib, socket, email
 import re, hashlib, gzip, bz2
 
 
@@ -140,18 +140,35 @@ def download_messages(server, filename, messages, config):
       buf = buf + "Message-Id: %s\n" % msg_id
     mbox.write(buf)
  
-    # fetch message
-    typ, data = server.fetch(messages[msg_id], "RFC822")
+    # fetch message and flags
+    typ, data = server.fetch(messages[msg_id], "(FLAGS RFC822)")
     assert('OK' == typ)
-    text = data[0][1].strip().replace('\r','')  
+    flags = imaplib.ParseFlags(data[0][0])
+
+    src_text = data[0][1].strip().replace('\r','')  
+
+    status_flags = 'O'
+    
+    if '\\Seen' in flags:
+      status_flags = 'R'
+    if '\\Answered' in flags:
+      status_flags = 'A'
+
+    if status_flags:
+      msg = email.message_from_string(src_text)
+      msg.add_header('Status', status_flags)
+      msg_text = msg.as_string()
+    else:
+      msg_text = src_text
+
     if config['thunderbird']:
       # This avoids Thunderbird mistaking a line starting "From  " as the start
       # of a new message. _Might_ also apply to other mail lients - unknown
-      text = text.replace("\nFrom ", "\n From ")
-    mbox.write(text)
+      msg_text = text.replace("\nFrom ", "\n From ")
+    mbox.write(msg_text)
     mbox.write('\n\n')
  
-    size = len(text)
+    size = len(msg_text)
     biggest = max(size, biggest)
     total += size
  
